@@ -15,8 +15,8 @@ function loadmnist()
     local f = hdf5.open('datasets/mnist.hdf5', 'r')
 
     data = {}
-    data.train = f:read('x_train'):all():double()
-    data.test = f:read('x_test'):all():double()
+    data.train = f:read('x_train'):all():cuda()
+    data.test = f:read('x_test'):all():cuda()
 
     f:close()
 
@@ -27,8 +27,8 @@ function loadfreyfaces()
     require 'hdf5'
     local f = hdf5.open('datasets/freyfaces.hdf5', 'r')
     local data = {}
-    data.train = f:read('train'):all():double()
-    data.test = f:read('test'):all():double()
+    data.train = f:read('train'):all():cuda()
+    data.test = f:read('test'):all():cuda()
     f:close()
 
     return data

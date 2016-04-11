@@ -15,7 +15,7 @@ function VAE.get_encoder(input_size, hidden_layer_size, latent_variable_size)
 
     encoder:add(mean_logvar)
     
-    return encoder
+    return encoder:cuda()
 end
 
 function VAE.get_decoder(input_size, hidden_layer_size, latent_variable_size, continuous)
@@ -34,7 +34,7 @@ function VAE.get_decoder(input_size, hidden_layer_size, latent_variable_size, co
         decoder:add(nn.Sigmoid(true))
     end
 
-    return decoder
+    return decoder:cuda()
 end
 
 return VAE

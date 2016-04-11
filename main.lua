@@ -1,6 +1,5 @@
 -- Joost van Amersfoort - <joost@joo.st>
-require 'torch'
-require 'nn'
+require 'cunn'
 require 'nngraph'
 require 'optim'
 
@@ -14,7 +13,7 @@ require 'Sampler'
 --For loading data files
 require 'load'
 
-local continuous = false
+local continuous = true
 data = load(continuous)
 
 local input_size = data.train:size(2)
@@ -36,11 +35,11 @@ local reconstruction, reconstruction_var, model
 if continuous then
     reconstruction, reconstruction_var = decoder(z):split(2)
     model = nn.gModule({input},{reconstruction, reconstruction_var, mean, log_var})
-    criterion = nn.GaussianCriterion()
+    criterion = nn.GaussianCriterion():cuda()
 else
     reconstruction = decoder(z)
     model = nn.gModule({input},{reconstruction, mean, log_var})
-    criterion = nn.BCECriterion()
+    criterion = nn.BCECriterion():cuda()
     criterion.sizeAverage = false
 end
 
@@ -51,7 +50,7 @@ end
 -- Uncomment to get structure of the Variational Autoencoder
 -- graph.dot(.fg, 'Variational Autoencoder', 'VA')
 
-KLD = nn.KLDCriterion()
+KLD = nn.KLDCriterion():cuda()
 
 local parameters, gradients = model:getParameters()
 
@@ -78,7 +77,7 @@ while true do
     for t,v in ipairs(indices) do
         xlua.progress(t, #indices)
 
-        local inputs = data.train:index(1,v)
+        local inputs = data.train:index(1,v):cuda()
 
         local opfunc = function(x)
             if x ~= parameters then

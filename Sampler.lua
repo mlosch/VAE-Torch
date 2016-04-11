@@ -7,13 +7,14 @@ local Sampler, parent = torch.class('nn.Sampler', 'nn.Module')
 function Sampler:__init()
     parent.__init(self)
     self.gradInput = {}
+    self.output = self.output:cuda()
 end 
 
 function Sampler:updateOutput(input)
     self.eps = self.eps or input[1].new()
     self.eps:resizeAs(input[1]):copy(torch.randn(input[1]:size()))
 
-    self.ouput = self.output or self.output.new()
+    self.output = self.output or self.output.new()
     self.output:resizeAs(input[2]):copy(input[2])
     self.output:mul(0.5):exp():cmul(self.eps)
 
