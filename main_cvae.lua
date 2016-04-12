@@ -25,12 +25,12 @@ opt = {
    ngf = 64,               -- #  of gen filters in first conv layer
    ndf = 64,               -- #  of discrim filters in first conv layer
    nThreads = 4,           -- #  of data loading threads to use
-   niter = 50,             -- #  of iter at starting learning rate
+   niter = 10000,             -- #  of iter at starting learning rate
    lr = 0.0002,            -- initial learning rate for adam
    beta1 = 0.5,            -- momentum term of adam
    ntrain = math.huge,     -- #  of examples per epoch. math.huge for full dataset
    display = 1,            -- display samples while training. 0 = false
-   display_id = 10,        -- display window id.
+   display_out = 'images',        -- display window id or output folder
    gpu = 1,                -- gpu = 0 is CPU mode. gpu=X is GPU mode on GPU X
    name = 'cvae',
 }
@@ -108,8 +108,10 @@ if opt.gpu > 0 then
    criterion:cuda()
 end
 
-if opt.display then disp = require 'display' end
-require 'image'
+if opt.display then
+    disp = require 'display'
+    require 'image'
+end
 
 
 local fx = function(x)
@@ -171,8 +173,8 @@ for epoch = 1, opt.niter do
           local reconstruction, reconstruction_var, mean, log_var = unpack(model:forward(input))
           if reconstruction then
             --disp.image(fake, {win=opt.display_id, title=opt.name})
-            image.save(('images/epoch_%d_iter_%d_real.jpg'):format(epoch, counter), image.toDisplayTensor{input=input, nrow=8})
-            image.save(('images/epoch_%d_iter_%d_fake.jpg'):format(epoch, counter), image.toDisplayTensor{input=reconstruction, nrow=8})
+            image.save(('%s/epoch_%d_iter_%d_real.jpg'):format(opt.display_out, epoch, counter), image.toDisplayTensor{input=input, nrow=8})
+            image.save(('%s/epoch_%d_iter_%d_fake.jpg'):format(opt.display_out, epoch, counter), image.toDisplayTensor{input=reconstruction, nrow=8})
           else
             print('Fake image is Nil')
           end
@@ -196,9 +198,9 @@ for epoch = 1, opt.niter do
    util.save('checkpoints/' .. opt.name .. '_' .. epoch .. '_decoder.t7', decoder, opt.gpu)
 --   util.save('checkpoints/' .. opt.name .. '_' .. epoch .. '_state.t7', state, opt.gpu)
 --   util.save('checkpoints/' .. opt.name .. '_' .. epoch .. '_lowerbound.t7', torch.Tensor(lowerboundlist), opt.gpu)
-   parameters = nil
-   gradients = nil
-   parameters, gradients = model:getParameters() -- reflatten the params and get them
+--   parameters = nil
+--   gradients = nil
+--   parameters, gradients = model:getParameters() -- reflatten the params and get them
    print(('End of epoch %d / %d \t Time Taken: %.3f'):format(
             epoch, opt.niter, epoch_tm:time().real))
 end
