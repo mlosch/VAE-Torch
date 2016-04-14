@@ -25,6 +25,7 @@ local cache = "cache"
 local cache_prefix = opt.data:gsub('/', '_')
 os.execute('mkdir -p cache')
 local trainCache = paths.concat(cache, cache_prefix .. '_trainCache.t7')
+local meanStdCache = paths.concat(cache, cache_prefix .. '_meanstdCache.t7')
 
 --------------------------------------------------------------------------------------------
 local loadSize   = {3, opt.loadSize}
@@ -46,7 +47,7 @@ local function loadImage(path)
    return input
 end
 
--- channel-wise mean and std. Calculate or load them from disk later in the script.
+-- pixel-wise mean and std. Calculate or load them from disk later in the script.
 local mean,std
 --------------------------------------------------------------------------------
 -- Hooks that are used for each image that is loaded
@@ -58,19 +59,31 @@ local trainHook = function(self, path)
    local iW = input:size(3)
    local iH = input:size(2)
 
-   -- do random crop
    local oW = sampleSize[2];
    local oH = sampleSize[2]
-   local h1 = math.ceil(torch.uniform(1e-2, iH-oH))
-   local w1 = math.ceil(torch.uniform(1e-2, iW-oW))
-   local out = image.crop(input, w1, h1, w1 + oW, h1 + oH)
+   local out = input
+
+   if iW ~= oW or iH ~= oH then
+      -- do random crop
+      local h1 = math.ceil(torch.uniform(1e-2, iH-oH))
+      local w1 = math.ceil(torch.uniform(1e-2, iW-oW))
+      out = image.crop(input, w1, h1, w1 + oW, h1 + oH)
+   end
+
    assert(out:size(2) == oW)
    assert(out:size(3) == oH)
    -- do hflip with probability 0.5
    if torch.uniform() > 0.5 then out = image.hflip(out); end
-   assert(out ~= nil)
-   out:mul(2):add(-1) -- make it [0, 1] -> [-1, 1]
-   assert(out ~= nil)
+   --out:mul(2):add(-1) -- make it [0, 1] -> [-1, 1]
+
+   -- mean/std
+   if mean then out:add(-mean) end
+   if std then out:cdiv(std) end
+
+--   if mean then
+--      print(mean:min(), mean:max(), mean:mean())
+--      print(std:min(), std:max(), std:mean())
+--   end
    return out
 end
 
@@ -103,4 +116,48 @@ do
    local nClasses = #trainLoader.classes
    assert(class:max() <= nClasses, "class logic has error")
    assert(class:min() >= 1, "class logic has error")
+end
+
+
+-- Estimate the per-pixel mean/std (so that the loaders can normalize appropriately)
+if paths.filep(meanStdCache) then
+   local meanstd = torch.load(meanStdCache)
+   mean = meanstd.mean
+   std = meanstd.std
+   print(meanStdCache)
+   print('Loaded mean and std from cache.')
+else
+   local tm = torch.Timer()
+   local nSamples = 10000
+   print('Estimating the mean (per-pixel) over ' .. nSamples .. ' randomly sampled training images')
+   sample = trainLoader:sample(1)[1]
+   local meanEstimate = torch.zeros(sample:size())
+   for i=1,nSamples do
+      local img = trainLoader:sample(1)[1]
+      meanEstimate:add(img)
+   end
+
+   meanEstimate:div(nSamples)
+   mean = meanEstimate
+
+   print('Estimating the std (per-pixel) over ' .. nSamples .. ' randomly sampled training images')
+   local stdEstimate = torch.zeros(sample:size())
+   for i=1,nSamples do
+      local img = trainLoader:sample(1)[1]
+      t = img:add(-mean)
+      stdEstimate:add(t:cmul(t))
+   end
+
+   stdEstimate:div(nSamples):sqrt()
+
+--   potentially necessary for some datasets:
+--   stdEstimate[stdEstimate:eq(0)] = 1e-6
+
+   std = stdEstimate
+
+   local cache = {}
+   cache.mean = mean
+   cache.std = std
+   torch.save(meanStdCache, cache)
+   print('Time to estimate:', tm:time().real)
 end
