@@ -1,9 +1,9 @@
 require 'torch'
 require 'cunn'
 
-local CVAE = {}
+local CVAEv2 = {}
 
-function CVAE.get_encoder(nc, ndf, latent_variable_size)
+function CVAEv2.get_encoder(nc, ndf, latent_variable_size)
     -- The Encoder
 
     local encoder = nn.Sequential()
@@ -19,10 +19,13 @@ function CVAE.get_encoder(nc, ndf, latent_variable_size)
     encoder:add(nn.SpatialConvolution(ndf * 2, ndf * 4, 4, 4, 2, 2, 1, 1))
     encoder:add(nn.SpatialBatchNormalization(ndf * 4))
     encoder:add(nn.LeakyReLU(0.2, true))
+    encoder:add(nn.Dropout(0.2))
 
     encoder:add(nn.SpatialConvolution(ndf * 4, ndf * 8, 4, 4, 2, 2, 1, 1))
     encoder:add(nn.SpatialBatchNormalization(ndf * 8))
     encoder:add(nn.LeakyReLU(0.2, true))
+    encoder:add(nn.Dropout(0.2))
+
     encoder:add(nn.View(ndf * 8 * 4 * 4))
 
     local mean_logvar = nn.ConcatTable()
@@ -40,18 +43,20 @@ function CVAE.get_encoder(nc, ndf, latent_variable_size)
     return encoder:cuda()
 end
 
-function CVAE.get_decoder(nc, ngf, latent_variable_size)
+function CVAEv2.get_decoder(nc, ngf, latent_variable_size)
     -- The Decoder
 
     local decoder = nn.Sequential()
     decoder:add(nn.Linear(latent_variable_size, ngf * 8 * 4 * 4))
     decoder:add(nn.BatchNormalization(ngf * 8 * 4 * 4))
     decoder:add(nn.ReLU(true))
+    decoder:add(nn.Dropout(0.2))
     decoder:add(nn.View(ngf * 8, 4, 4))
 
     decoder:add(nn.SpatialFullConvolution(ngf * 8, ngf * 4, 4, 4, 2, 2, 1, 1))
     decoder:add(nn.SpatialBatchNormalization(ngf * 4))
     decoder:add(nn.ReLU(true))
+    decoder:add(nn.Dropout(0.2))
 
     decoder:add(nn.SpatialFullConvolution(ngf * 4, ngf * 2, 4, 4, 2, 2, 1, 1))
     decoder:add(nn.SpatialBatchNormalization(ngf * 2))
@@ -80,4 +85,4 @@ function CVAE.get_decoder(nc, ngf, latent_variable_size)
     return decoder:cuda()
 end
 
-return CVAE
+return CVAEv2

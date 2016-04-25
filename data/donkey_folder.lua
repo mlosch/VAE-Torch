@@ -17,24 +17,26 @@ paths.dofile('dataset.lua')
 -- Check for existence of opt.data
 opt.data = os.getenv('DATA_ROOT') or '/data/local/imagenet-fetch/256'
 if not paths.dirp(opt.data) then
-    error('Did not find directory: ', opt.data)
+    print('Did not find directory: ', opt.data)
 end
 
 -- a cache file of the training metadata (if doesnt exist, will be created)
 local cache = "cache"
 local cache_prefix = opt.data:gsub('/', '_')
 os.execute('mkdir -p cache')
-local trainCache = paths.concat(cache, cache_prefix .. '_trainCache.t7')
-local meanStdCache = paths.concat(cache, cache_prefix .. '_meanstdCache.t7')
+local trainCache = trainCache or paths.concat(cache, cache_prefix .. '_trainCache.t7')
+local meanStdCache = meaStdCache or paths.concat(cache, cache_prefix .. '_meanstdCache.t7')
 
 --------------------------------------------------------------------------------------------
 local loadSize   = {3, opt.loadSize}
 local sampleSize = {3, opt.fineSize}
 
 local function loadImage(path)
-   local input = image.load(path, 3, 'float')
-   if not input then
+
+   local loadok, input = pcall(image.load, path, 3, 'float')
+   if not loadok or not input then
     print('Error while loading image at path: '.. path)
+    return nil
    end
    -- find the smaller dimension, and resize it to loadSize[2] (while keeping aspect ratio)
    local iW = input:size(3)
@@ -56,6 +58,11 @@ local mean,std
 local trainHook = function(self, path)
    collectgarbage()
    local input = loadImage(path)
+
+   if input == nil then
+      return nil
+   end
+
    local iW = input:size(3)
    local iH = input:size(2)
 
@@ -128,7 +135,7 @@ if paths.filep(meanStdCache) then
    print('Loaded mean and std from cache.')
 else
    local tm = torch.Timer()
-   local nSamples = 10000
+   local nSamples = math.min(trainLoader:size(), 10000)
    print('Estimating the mean (per-pixel) over ' .. nSamples .. ' randomly sampled training images')
    sample = trainLoader:sample(1)[1]
    local meanEstimate = torch.zeros(sample:size())

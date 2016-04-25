@@ -225,7 +225,11 @@ function dataset:__init(...)
                                               .. classFindFiles[i] .. "' |"
                                               .. cut .. " -f1 -d' '"))
       if length == 0 then
-         error('Class has zero samples')
+         print('Class has zero samples: '.. self.classes[i])
+         notempyt, errmsg = os.remove('/media/max/Megatron1/imagenet/'..self.classes[i])
+         if notempyt == nil then
+            error('Attempt to remove directory failed. '.. errmsg)
+         end
       else
          self.classList[i] = torch.linspace(runningIndex + 1, runningIndex + length, length):long()
          self.imageClass[{{runningIndex + 1, runningIndex + length}}]:fill(i)
@@ -311,9 +315,14 @@ end
 
 -- getByClass
 function dataset:getByClass(class)
-   local index = math.ceil(torch.uniform() * self.classListSample[class]:nElement())
-   local imgpath = ffi.string(torch.data(self.imagePath[self.classListSample[class][index]]))
-   return self:sampleHookTrain(imgpath)
+   img = nil
+   while img == nil do
+      local index = math.ceil(torch.uniform() * self.classListSample[class]:nElement())
+      local imgpath = ffi.string(torch.data(self.imagePath[self.classListSample[class][index]]))
+      img = self:sampleHookTrain(imgpath)
+   end
+
+   return img
 end
 
 -- converts a table of samples (and corresponding labels) to a clean tensor
