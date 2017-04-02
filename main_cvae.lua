@@ -20,19 +20,19 @@ util = paths.dofile('util.lua')
 
 opt = {
    dataset = 'folder',       -- imagenet / lsun / folder
-   batchSize = 64,
+   batchSize = 4,
    loadSize = 96,
    fineSize = 32,
    nz = 100,               -- #  of dim for Z
    ngf = 64,               -- #  of gen filters in first conv layer
    ndf = 64,               -- #  of discrim filters in first conv layer
    nThreads = 4,           -- #  of data loading threads to use
-   niter = 1,             -- #  of iter at starting learning rate
+   niter = 100,             -- #  of iter at starting learning rate
    lr = 0.0002,            -- initial learning rate for adam
    beta1 = 0.5,            -- momentum term of adam
-   ntrain = 100,     -- #  of examples per epoch. math.huge for full dataset
+   ntrain = math.huge,     -- #  of examples per epoch. math.huge for full dataset
    display = 1,            -- display samples while training. 0 = false
-   display_out = '.',        -- display window id or output folder
+   display_out = '/media/sdj/._/images',        -- display window id or output folder
    gpu = 1,                -- gpu = 0 is CPU mode. gpu=X is GPU mode on GPU X
    name = 'cvae',
 }
@@ -194,6 +194,20 @@ end
 
 local parametersD, gradParametersD = netD:getParameters()
 
+--[[
+local samples = my_data.data[{{1,64}}]
+input:copy(samples)
+gen_noise:normal(0,1)
+
+local out, mean, var = unpack(model:forward({input, gen_noise}))
+
+print(out:size())
+local im_tensor = torch.clamp(out, 0, 1)
+for i=1,10 do
+	print(out[{{i}, {1}, {1}, {1,5}}])
+end
+image.save('test.jpg', image.toDisplayTensor{input=im_tensor, nrow=8})
+--]]
 
 
 -- train
@@ -204,7 +218,9 @@ for epoch = 1, opt.niter do
    lowerbound = 0
 
    for i = 1, math.min(my_data.data:size(1), opt.ntrain), opt.batchSize do
+
 	if  i + opt.batchSize - 1 > math.min(my_data.data:size(1), opt.ntrain) then break end
+
 	local fDx = function(x)
 	   gradParametersD:zero()
 	   -- train with real
@@ -214,7 +230,7 @@ for epoch = 1, opt.niter do
 	   label:fill(real_label)
 
 	   local output = netD:forward(input)
-	   real_disl:copy(netD:get(Disl).output) -- Disl=10
+--	   real_disl:copy(netD:get(Disl).output) -- Disl=10
 	   local errD_real = gan_criterion:forward(output, label)
 	   local df_do = gan_criterion:backward(output, label)
 	   netD:backward(input, df_do)
@@ -226,7 +242,7 @@ for epoch = 1, opt.niter do
 	   -- train with reconstructed image
 	   local output = netD:forward(model.output[1])
 --	   print(netD:get(10).output:size())
-	   fake_disl:copy(netD:get(Disl).output)
+--	   fake_disl:copy(netD:get(Disl).output)
 	   local errD_fake = gan_criterion:forward(output, label)
 	   local df_do = gan_criterion:backward(output, label)
 	   netD:backward(input, df_do)
@@ -245,7 +261,7 @@ for epoch = 1, opt.niter do
 	    --encoder:apply(function(m) if torch.type(m):find('Convolution') then m.bias:zero() end end)
 
 	    model:zeroGradParameters()
-	    local err = criterion:forward(fake_disl, real_disl) -- replacing MSE criteria, autoencoding beyond pixel
+--	    local err = criterion:forward(fake_disl, real_disl) -- replacing MSE criteria, autoencoding beyond pixel
 
 	    local KLDerr = KLD:forward(model.output[2], model.output[3])
 	    local dKLD_dmu, dKLD_dlog_var = unpack(KLD:backward(model.output[2], model.output[3]))
@@ -257,11 +273,14 @@ for epoch = 1, opt.niter do
 	    local df_do = gan_criterion:backward(output, label)
 	    local df_dg = netD:updateGradInput(model.output[1], df_do)
 
-	    error_grads = { df_dg, dKLD_dmu, dKLD_dlog_var}
+	    local mse = criterion:forward(model.output[1], input)
+	    local dm_dg = criterion:backward(model.output[1], input)
+
+	    error_grads = { df_dg+dm_dg, dKLD_dmu, dKLD_dlog_var}
 
 	    model:backward({input, gen_noise}, error_grads)
 
-	    local batchlowerbound = err + KLDerr + errG
+	    local batchlowerbound = mse + KLDerr + errG
 
 	    return batchlowerbound, gradients
 	end
@@ -275,15 +294,13 @@ for epoch = 1, opt.niter do
 
       -- display
       counter = counter + 1
-      if counter % 1 == 0 and opt.display then
-	    	--  gen_noise:normal(0,1)
+      if counter % 1600 == 0 and opt.display then
+	    	--gen_noise:normal(0,1)
           local reconstruction, mean, log_var = unpack(model:forward({input, gen_noise}))
-	  print (gen_noise[{{1}}])
-	  print (gen_noise[{{64}}])
           if reconstruction then
             --disp.image(fake, {win=opt.display_id, title=opt.name})
-            image.save(('%s/epoch_%d_iter_%d_real.jpg'):format(opt.display_out, epoch, counter), image.toDisplayTensor{input=input, nrow=8})
-            image.save(('%s/epoch_%d_iter_%d_fake.jpg'):format(opt.display_out, epoch, counter), image.toDisplayTensor{input=reconstruction, nrow=8})
+         	 image.save(('%s/epoch_%d_iter_%d_real.jpg'):format(opt.display_out, epoch, counter), image.toDisplayTensor{input=input, nrow=2})
+	         image.save(('%s/epoch_%d_iter_%d_fake.jpg'):format(opt.display_out, epoch, counter), image.toDisplayTensor{input=reconstruction, nrow=2})
           else
             print('Fake image is Nil')
           end
@@ -302,14 +319,14 @@ for epoch = 1, opt.niter do
 
    lowerboundlist = torch.Tensor(1,1):fill(lowerbound/(epoch * math.min(my_data.data:size(1), opt.ntrain)))
 
-   paths.mkdir('checkpoints')
-   util.save('checkpoints/' .. opt.name .. '_' .. epoch .. '_encoder.t7', encoder, opt.gpu)
-   util.save('checkpoints/' .. opt.name .. '_' .. epoch .. '_decoder.t7', decoder, opt.gpu)
-   util.save('checkpoints/' .. opt.name .. '_' .. epoch .. '_gendec.t7', gendec, opt.gpu)
-   util.save('checkpoints/' .. opt.name .. '_' .. epoch .. '_gen.t7', gen, opt.gpu)
+   paths.mkdir('/media/sdj/._/checkpoints')
+   util.save('/media/sdj/._/checkpoints/' .. opt.name .. '_' .. epoch .. '_encoder.t7', encoder, opt.gpu)
+   util.save('/media/sdj/._/checkpoints/' .. opt.name .. '_' .. epoch .. '_decoder.t7', decoder, opt.gpu)
+   util.save('/media/sdj/._/checkpoints/' .. opt.name .. '_' .. epoch .. '_gendec.t7', gendec, opt.gpu)
+   util.save('/media/sdj/._/checkpoints/' .. opt.name .. '_' .. epoch .. '_gen.t7', gen, opt.gpu)
 
-   torch.save('checkpoints/' .. epoch .. '_mean.t7', model.output[2])
-   torch.save('checkpoints/' .. epoch .. '_log_var.t7', model.output[3])
+   torch.save('/media/sdj/._/checkpoints/' .. epoch .. '_mean.t7', model.output[2])
+   torch.save('/media/sdj/._/checkpoints/' .. epoch .. '_log_var.t7', model.output[3])
 --   util.save('checkpoints/' .. opt.name .. '_' .. epoch .. '_state.t7', state, opt.gpu)
 --   util.save('checkpoints/' .. opt.name .. '_' .. epoch .. '_lowerbound.t7', torch.Tensor(lowerboundlist), opt.gpu)
 --   parameters = nil
