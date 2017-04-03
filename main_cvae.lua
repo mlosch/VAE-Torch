@@ -14,7 +14,8 @@ require 'KLDCriterion'
 require 'GaussianCriterion'
 require 'Sampler'
 require 'Merger'
-require 'dataset-mnist'
+--require 'dataset-mnist'
+require 'cifar10'
 
 util = paths.dofile('util.lua')
 
@@ -79,7 +80,7 @@ local SpatialBatchNormalization = nn.SpatialBatchNormalization
 
 
 -- input is (nc) x 64 x 64
-local nc = 1
+local nc = 3
 
 netD:add(SpatialConvolution(nc, opt.ndf, 3, 3, 1, 1, 1, 1))
 netD:add(nn.LeakyReLU(0.2, true))
@@ -162,7 +163,7 @@ local epoch_tm = torch.Timer()
 local tm = torch.Timer()
 local data_tm = torch.Timer()
 local lowerbound = 0
-local my_data = mnist.loadTrainSet(60000, {32, 32})
+local my_data = trainData--mnist.loadTrainSet(60000, {32, 32})
 
 if opt.gpu > 0 then
    require 'cunn'
@@ -185,7 +186,11 @@ if opt.gpu > 0 then
    my_data.data:cuda()
 end
 
-my_data:normalizeGlobal()
+local data_mean, data_std = my_data.data:mean(), my_data.data:std()
+my_data.data:add(-data_mean)
+my_data.data:mul(1/data_std)
+
+--my_data:normalizeGlobal()
 
 if opt.display then
     disp = require 'display'
@@ -245,7 +250,7 @@ for epoch = 1, opt.niter do
 --	   fake_disl:copy(netD:get(Disl).output)
 	   local errD_fake = gan_criterion:forward(output, label)
 	   local df_do = gan_criterion:backward(output, label)
-	   netD:backward(input, df_do)
+	   netD:backward(model.output[1], df_do)
 
 	   errD = errD_real + errD_fake
 
