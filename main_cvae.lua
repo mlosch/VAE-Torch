@@ -15,20 +15,20 @@ require 'GaussianCriterion'
 require 'Sampler'
 require 'Merger'
 --require 'dataset-mnist'
-require 'cifar10'
+--require 'cifar10'
 
 util = paths.dofile('util.lua')
 
 opt = {
    dataset = 'folder',       -- imagenet / lsun / folder
-   batchSize = 4,
+   batchSize = 64,
    loadSize = 96,
-   fineSize = 32,
+   fineSize = 64,
    nz = 100,               -- #  of dim for Z
    ngf = 64,               -- #  of gen filters in first conv layer
    ndf = 64,               -- #  of discrim filters in first conv layer
    nThreads = 4,           -- #  of data loading threads to use
-   niter = 100,             -- #  of iter at starting learning rate
+   niter = 25,             -- #  of iter at starting learning rate
    lr = 0.0002,            -- initial learning rate for adam
    beta1 = 0.5,            -- momentum term of adam
    ntrain = math.huge,     -- #  of examples per epoch. math.huge for full dataset
@@ -49,12 +49,12 @@ torch.manualSeed(opt.manualSeed)
 torch.setnumthreads(1)
 torch.setdefaulttensortype('torch.FloatTensor')
 
---[[
+
 -- create data loader
 local DataLoader = paths.dofile('data/data.lua')
 local data = DataLoader.new(opt.nThreads, opt.dataset, opt)
 print("Dataset: " .. opt.dataset, " Size: ", data:size()) --data loaded
---]]
+
 ----------------------------------------------------------------------------
 local function weights_init(m)
    local name = torch.type(m)
@@ -67,7 +67,7 @@ local function weights_init(m)
    end
 end
 
-local Disl = 10
+--local Disl = 10
 
 local real_label = 1
 local fake_label = 0
@@ -82,7 +82,7 @@ local SpatialBatchNormalization = nn.SpatialBatchNormalization
 -- input is (nc) x 64 x 64
 local nc = 3
 
-netD:add(SpatialConvolution(nc, opt.ndf, 3, 3, 1, 1, 1, 1))
+netD:add(SpatialConvolution(nc, opt.ndf, 4, 4, 2, 2, 1, 1))
 netD:add(nn.LeakyReLU(0.2, true))
 -- state size: (opt.ndf) x 32 x 32
 netD:add(SpatialConvolution(opt.ndf, opt.ndf * 2, 4, 4, 2, 2, 1, 1))
@@ -157,13 +157,15 @@ optimStateD = {
 local input = torch.Tensor(opt.batchSize, nc, opt.fineSize, opt.fineSize)
 local gen_noise =  torch.Tensor(opt.batchSize, nz, 1, 1)
 local label = torch.Tensor(opt.batchSize)
+--[[
 local real_disl = torch.Tensor(opt.batchSize, 512, 4, 4)
 local fake_disl = torch.Tensor(opt.batchSize, 512, 4, 4)
+--]]
 local epoch_tm = torch.Timer()
 local tm = torch.Timer()
 local data_tm = torch.Timer()
 local lowerbound = 0
-local my_data = trainData--mnist.loadTrainSet(60000, {32, 32})
+--local my_data = trainData--mnist.loadTrainSet(60000, {32, 32})
 
 if opt.gpu > 0 then
    require 'cunn'
@@ -171,8 +173,10 @@ if opt.gpu > 0 then
    input = input:cuda()
    gen_noise = gen_noise:cuda()
    label = label:cuda()
+   --[[
    real_disl = real_disl:cuda()
    fake_disl = fake_disl:cuda()
+   --]]
    decoder = util.cudnn(decoder)
    encoder = util.cudnn(encoder)
    gen     = util.cudnn(gen)
@@ -183,13 +187,14 @@ if opt.gpu > 0 then
    gen:cuda()
    gendec:cuda()
    netD:cuda()
-   my_data.data:cuda()
+--   my_data.data:cuda()
 end
 
+--[[
 local data_mean, data_std = my_data.data:mean(), my_data.data:std()
 my_data.data:add(-data_mean)
 my_data.data:mul(1/data_std)
-
+--]]
 --my_data:normalizeGlobal()
 
 if opt.display then
@@ -222,15 +227,15 @@ for epoch = 1, opt.niter do
 
    lowerbound = 0
 
-   for i = 1, math.min(my_data.data:size(1), opt.ntrain), opt.batchSize do
+   for i = 1, math.min(data:size(), opt.ntrain), opt.batchSize do
 
-	if  i + opt.batchSize - 1 > math.min(my_data.data:size(1), opt.ntrain) then break end
+--	if  i + opt.batchSize - 1 > math.min(my_data.data:size(1), opt.ntrain) then break end
 
 	local fDx = function(x)
 	   gradParametersD:zero()
 	   -- train with real
 	   data_tm:reset(); data_tm:resume()
-	   local real = my_data.data[{{i, i+opt.batchSize-1}}]
+	   local real = data:getBatch()--my_data.data[{{i, i+opt.batchSize-1}}]
 	   input:copy(real)
 	   label:fill(real_label)
 
@@ -285,27 +290,27 @@ for epoch = 1, opt.niter do
 
 	    model:backward({input, gen_noise}, error_grads)
 
-	    local batchlowerbound = mse + KLDerr + errG
+	    errVAE = mse + KLDerr + errG
 
-	    return batchlowerbound, gradients
+	    return errVAE, gradients
 	end
 
       tm:reset()
 
       -- Update model
       optim.adam(fDx, parametersD, optimStateD)
-      x, batchlowerbound = optim.adam(fx, parameters, optimState)
-      lowerbound = lowerbound + batchlowerbound[1]
+      optim.adam(fx, parameters, optimState)
+--      lowerbound = lowerbound + batchlowerbound[1]
 
       -- display
       counter = counter + 1
-      if counter % 1600 == 0 and opt.display then
+      if counter % 100 == 0 and opt.display then
 	    	--gen_noise:normal(0,1)
           local reconstruction, mean, log_var = unpack(model:forward({input, gen_noise}))
           if reconstruction then
             --disp.image(fake, {win=opt.display_id, title=opt.name})
-         	 image.save(('%s/epoch_%d_iter_%d_real.jpg'):format(opt.display_out, epoch, counter), image.toDisplayTensor{input=input, nrow=2})
-	         image.save(('%s/epoch_%d_iter_%d_fake.jpg'):format(opt.display_out, epoch, counter), image.toDisplayTensor{input=reconstruction, nrow=2})
+         	 image.save(('%s/epoch_%d_iter_%d_real.jpg'):format(opt.display_out, epoch, counter), image.toDisplayTensor{input=input, nrow=8})
+	         image.save(('%s/epoch_%d_iter_%d_fake.jpg'):format(opt.display_out, epoch, counter), image.toDisplayTensor{input=reconstruction, nrow=8})
           else
             print('Fake image is Nil')
           end
@@ -314,26 +319,26 @@ for epoch = 1, opt.niter do
       -- logging
       if ((i-1) / opt.batchSize) % 1 == 0 then
          print(('Epoch: [%d][%8d / %8d]\t Time: %.3f  DataTime: %.3f  '
-                   .. '  Lowerbound: %.4f'):format(
+                   .. '  ErrD: %.4f' .. '  ErrVAE: %.4f'):format(
                  epoch, ((i-1) / opt.batchSize),
-                 math.floor(math.min(my_data.data:size(1), opt.ntrain) / opt.batchSize),
+                 math.floor(math.min(data:size(), opt.ntrain) / opt.batchSize),
                  tm:time().real, data_tm:time().real,
-                 lowerbound/((i-1)/opt.batchSize)))
+                 errD, errVAE))
       end
    end
 
-   lowerboundlist = torch.Tensor(1,1):fill(lowerbound/(epoch * math.min(my_data.data:size(1), opt.ntrain)))
+--   lowerboundlist = torch.Tensor(1,1):fill(lowerbound/(epoch * math.min(my_data.data:size(1), opt.ntrain)))
 
-   paths.mkdir('/media/sdj/._/checkpoints')
-   util.save('/media/sdj/._/checkpoints/' .. opt.name .. '_' .. epoch .. '_encoder.t7', encoder, opt.gpu)
-   util.save('/media/sdj/._/checkpoints/' .. opt.name .. '_' .. epoch .. '_decoder.t7', decoder, opt.gpu)
-   util.save('/media/sdj/._/checkpoints/' .. opt.name .. '_' .. epoch .. '_gendec.t7', gendec, opt.gpu)
-   util.save('/media/sdj/._/checkpoints/' .. opt.name .. '_' .. epoch .. '_gen.t7', gen, opt.gpu)
+   paths.mkdir('/media/sdj/._/checkpoints_cvae')
+   util.save('/media/sdj/._/checkpoints_cvae/' .. opt.name .. '_' .. epoch .. '_encoder.t7', encoder, opt.gpu)
+   util.save('/media/sdj/._/checkpoints_cvae/' .. opt.name .. '_' .. epoch .. '_decoder.t7', decoder, opt.gpu)
+   util.save('/media/sdj/._/checkpoints_cvae/' .. opt.name .. '_' .. epoch .. '_gendec.t7', gendec, opt.gpu)
+   util.save('/media/sdj/._/checkpoints_cvae/' .. opt.name .. '_' .. epoch .. '_gen.t7', gen, opt.gpu)
 
-   torch.save('/media/sdj/._/checkpoints/' .. epoch .. '_mean.t7', model.output[2])
-   torch.save('/media/sdj/._/checkpoints/' .. epoch .. '_log_var.t7', model.output[3])
---   util.save('checkpoints/' .. opt.name .. '_' .. epoch .. '_state.t7', state, opt.gpu)
---   util.save('checkpoints/' .. opt.name .. '_' .. epoch .. '_lowerbound.t7', torch.Tensor(lowerboundlist), opt.gpu)
+   torch.save('/media/sdj/._/checkpoints_cvae/' .. epoch .. '_mean.t7', model.output[2])
+   torch.save('/media/sdj/._/checkpoints_cvae/' .. epoch .. '_log_var.t7', model.output[3])
+--   util.save('checkpoints_cvae/' .. opt.name .. '_' .. epoch .. '_state.t7', state, opt.gpu)
+--   util.save('checkpoints_cvae/' .. opt.name .. '_' .. epoch .. '_lowerbound.t7', torch.Tensor(lowerboundlist), opt.gpu)
 --   parameters = nil
 --   gradients = nil
 --   parameters, gradients = model:getParameters() -- reflatten the params and get them

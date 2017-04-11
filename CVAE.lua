@@ -9,7 +9,7 @@ function CVAE.get_encoder(nc, ndf, latent_variable_size)
     -- iw -> width ...................
 
     local encoder = nn.Sequential()
-    encoder:add(nn.SpatialConvolution(nc, ndf, 3, 3, 1, 1, 1, 1))          --32 -> 32
+    encoder:add(nn.SpatialConvolution(nc, ndf, 4, 4, 2, 2, 1, 1))          --32 -> 32
     encoder:add(nn.LeakyReLU(0.2, true))
 
     encoder:add(nn.SpatialConvolution(ndf, ndf * 2, 4, 4, 2, 2, 1, 1))     --32 -> 16
@@ -99,7 +99,7 @@ function CVAE.get_gendec(nc, ngf)
     netM:add(nn.SpatialBatchNormalization(ngf)):add(nn.ReLU(true))
 
     -- 32 -> 32
-    netM:add(nn.SpatialFullConvolution(ngf, nc, 3, 3, 1, 1, 1, 1))
+    netM:add(nn.SpatialFullConvolution(ngf, nc, 4, 4, 2, 2, 1, 1))
     netM:add(nn.Tanh())
 --[[
     mean_logvar = nn.ConcatTable()
